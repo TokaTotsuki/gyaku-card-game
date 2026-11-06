@@ -1,0 +1,1453 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>逆順LCG テスト版</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#fff;color:#111;font-family:'Segoe UI',sans-serif;height:100vh;overflow:hidden;display:flex;flex-direction:column}
+/* LOBBY */
+#lobby{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;gap:16px}
+#lobby h1{color:#1a7a1a;font-size:1.8em}
+.btn{padding:10px 22px;background:#2a7a2a;border:2px solid #3a9a3a;color:#fff;border-radius:7px;cursor:pointer;font-size:1em}
+.btn:hover{background:#3a9a3a}
+input{padding:9px;border:2px solid #bbb;background:#fff;color:#111;border-radius:6px;font-size:1em;width:220px}
+#peer-id-box{font-size:1.6em;color:#1a7a1a;font-weight:bold;letter-spacing:3px;background:#f0fff0;padding:10px 20px;border-radius:8px;border:1px solid #3a8a3a}
+/* STATUS BAR */
+#sbar{background:#f0f0f0;padding:5px 10px;display:flex;gap:16px;align-items:center;font-size:.82em;flex-shrink:0;border-bottom:1px solid #ccc}
+#sbar .ph{font-weight:bold;color:#1a7a1a}
+#sbar .pr{color:#c08000}
+#sbar .vt{color:#cc3333}
+/* GAME LAYOUT */
+#game{display:none;flex:1;flex-direction:column;overflow:hidden}
+/* CHAIN AREA */
+#chain-wrap{background:#f5fff5;border-top:1px solid #c8e0c8;border-bottom:1px solid #c8e0c8;overflow-x:auto;display:flex;align-items:center;padding:6px 10px;gap:6px;min-height:136px}
+#chain-wrap .lbl{color:#888;font-size:.65em;white-space:nowrap;writing-mode:vertical-lr;padding:0 3px}
+#chain-slots{display:flex;gap:6px;align-items:center}
+.cslot{display:flex;flex-direction:column;align-items:center;gap:2px}
+.cslot-lbl{font-size:.6em;color:#666}
+.cslot-marker{font-size:.55em;background:#fffce8;border:1px solid #c8b030;border-radius:3px;padding:1px 4px;color:#806000}
+.cslot-marker.cb{background:#e8f5e8;border-color:#3a8a3a;color:#1a5a1a}
+/* CARDS */
+.card{width:78px;min-width:78px;height:108px;border-radius:5px;border:2px solid #aaa;background:#fff;cursor:pointer;position:relative;display:flex;flex-direction:column;padding:3px;font-size:.6em;user-select:none;transition:transform .12s,border-color .12s;flex-shrink:0;color:#111}
+.card:hover:not(.no-hover){border-color:#2a8a2a;transform:translateY(-4px)}
+.card.sel{border-color:#cc8800!important;transform:translateY(-8px)}
+.card.tap{transform:rotate(90deg);margin:0 14px}
+.card.tap.sel{transform:rotate(90deg) translateX(-8px)}
+.card.fd{background:#f0f0f0;border-color:#aaa;cursor:default}
+.card.fd:hover{transform:none;border-color:#aaa}
+/* 自分のカード：タイプ別背景色 */
+.card.atk{background:#fdf0e0;border-color:#aa6622}
+.card.spl{background:#e8f0ff;border-color:#226688}
+.card.unt{background:#eaf6ea;border-color:#448833}
+.card.exc{background:#f5e8ff;border-color:#9944aa}
+/* 相手のカード：白背景（ボーダー色はタイプ共通） */
+.card.opp.unt,.card.opp.atk,.card.opp.spl,.card.opp.exc{background:#fff}
+#opp-area .card.unt,#opp-area .card.atk,#opp-area .card.spl,#opp-area .card.exc{background:#fff}
+.card.resolve-target{border-color:#ff8800!important;animation:pr .8s infinite}
+.card.can-target{border-color:#cc0000!important;animation:pt .7s infinite;cursor:crosshair}
+.card.can-block{border-color:#0066cc!important;animation:pb .7s infinite}
+@keyframes pr{0%,100%{box-shadow:0 0 0 rgba(255,136,0,0)}50%{box-shadow:0 0 8px rgba(255,136,0,.8)}}
+@keyframes pt{0%,100%{box-shadow:0 0 0 rgba(204,0,0,0)}50%{box-shadow:0 0 8px rgba(204,0,0,.8)}}
+@keyframes pb{0%,100%{box-shadow:0 0 0 rgba(0,102,204,0)}50%{box-shadow:0 0 8px rgba(0,102,204,.8)}}
+.cname{font-weight:bold;font-size:.78em;line-height:1.1;margin-bottom:1px;color:#111}
+.ccost{position:absolute;top:3px;right:3px;background:#ddd;color:#111;border-radius:50%;width:17px;height:17px;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:.8em}
+.ctype{font-size:.58em;color:#555;margin:1px 0;border:1px solid #bbb;padding:0 3px;border-radius:2px;display:inline-block}
+.cstats{position:absolute;bottom:3px;left:3px;color:#1a6a1a;font-size:.7em}
+.ceff{font-size:.52em;color:#444;margin-top:3px;line-height:1.25;overflow:hidden;max-height:52px}
+.hankof{color:#cc0000;font-size:.6em}
+/* PLAYER AREAS */
+.parea{display:flex;align-items:center;padding:5px 8px;gap:6px;min-height:145px;flex-shrink:0}
+#opp-area{background:#fff5f5}
+#my-area{background:#f0f5ff}
+/* ZONES */
+.zone{min-width:80px;min-height:116px;border:1px dashed #bbb;border-radius:5px;padding:3px;display:flex;flex-wrap:wrap;align-content:flex-start;gap:2px;position:relative}
+.zone.bz{flex:1;min-width:100px}
+.zone.hand{flex:2;min-width:180px;flex-wrap:nowrap;overflow-x:auto}
+.zone.mz{min-width:70px;max-width:194px}
+.zone.vz{min-width:70px}
+.zlbl{font-size:.58em;color:#555;white-space:nowrap;margin-bottom:1px;display:block}
+.cnt{background:#eee;border-radius:8px;padding:0 5px;font-size:.65em;color:#555}
+.pzone{width:58px;height:80px;border:2px solid #888;border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:.65em;text-align:center;color:#111}
+.pzone.mytap{border-color:#cc8800;opacity:.8}
+/* ACTION BAR */
+#abar{background:#f0f0f0;padding:6px 10px;display:flex;gap:7px;align-items:center;min-height:42px;flex-shrink:0;border-top:1px solid #ccc}
+.ab{padding:5px 12px;background:#e8f5e8;border:1px solid #448833;color:#111;border-radius:5px;cursor:pointer;font-size:.82em}
+.ab:hover{background:#d0ebd0}
+.ab.red{background:#fce8e8;border-color:#cc3333}
+.ab.red:hover{background:#f5d0d0}
+.ab:disabled,.ab[disabled]{opacity:.35;cursor:default;pointer-events:none}
+#amsg{font-size:.8em;color:#1a7a1a;flex:1}
+/* MODAL */
+#modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;align-items:center;justify-content:center}
+#modal.on{display:flex}
+#mbox{background:#fff;border:2px solid #3a8a3a;border-radius:10px;padding:18px;max-width:520px;min-width:280px}
+#mtitle{color:#1a7a1a;font-weight:bold;margin-bottom:10px;font-size:1.05em}
+#mcont{margin-bottom:14px;font-size:.88em;line-height:1.5;color:#222}
+#macts{display:flex;gap:8px;flex-wrap:wrap}
+/* LOG */
+#glog{background:#fafafa;border-top:1px solid #ddd;height:52px;overflow-y:auto;padding:3px 8px;font-size:.7em;color:#555;flex-shrink:0}
+</style>
+</head>
+<body>
+
+<!-- LOBBY -->
+<div id="lobby">
+  <h1>逆順LCG テスト版</h1>
+  <div id="lstatus" style="color:#888;font-size:.9em">PeerJSに接続中…</div>
+  <div id="lmain" style="display:none;flex-direction:column;align-items:center;gap:12px">
+    <button class="btn" onclick="createGame()">ゲームを作成（ホスト）</button>
+    <div style="color:#666">または</div>
+    <div style="display:flex;gap:8px">
+      <input id="join-input" placeholder="ゲームIDを入力"/>
+      <button class="btn" onclick="joinGame()">参加</button>
+    </div>
+  </div>
+  <div id="lwait" style="display:none;flex-direction:column;align-items:center;gap:10px">
+    <div>あなたのゲームID（相手に共有）:</div>
+    <div id="peer-id-box">---</div>
+    <div style="color:#888;font-size:.85em">相手の接続を待機中…</div>
+  </div>
+</div>
+
+<!-- GAME -->
+<div id="game">
+  <div id="sbar">
+    <span class="ph" id="sph">-</span>
+    <span class="pr" id="spr"></span>
+    <span class="vt" id="svt"></span>
+    <span style="margin-left:auto;color:#666;font-size:.85em" id="srole"></span>
+  </div>
+
+  <!-- Opponent area -->
+  <div class="parea" id="opp-area">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:3px">
+      <div class="pzone" id="opp-pzone"><span>相手</span><span id="opp-pri" style="color:#ffd;display:none">★優先権</span></div>
+      <span class="zlbl" id="opp-pm" style="color:#cc9;display:none">🏅優先権マーカー</span>
+      <span class="zlbl">AEトラッシュ: <span id="opp-ae">0</span></span>
+    </div>
+    <div class="zone vz" id="opp-vz"><span class="zlbl">ボルテージ <span class="cnt" id="opp-vc">0</span>/7</span></div>
+    <div class="zone mz" id="opp-mz"><span class="zlbl">マナ <span class="cnt" id="opp-mc">0</span></span></div>
+    <div class="zone bz" id="opp-bz"><span class="zlbl">バトルゾーン</span></div>
+    <div class="zone hand" id="opp-hand"><span class="zlbl">手札 <span class="cnt" id="opp-hc">0</span></span></div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+      <span class="zlbl">デッキ <span class="cnt" id="opp-dc">0</span></span>
+      <div class="card fd no-hover" style="cursor:default"><span style="text-align:center;padding:30px 20px;font-size:1.3em;display:block">▣</span></div>
+      <span class="zlbl">トラッシュ <span class="cnt" id="opp-tc">0</span></span>
+    </div>
+  </div>
+
+  <!-- Chain area -->
+  <div id="chain-wrap">
+    <div class="lbl">← 後から解決</div>
+    <div id="chain-slots"></div>
+    <div class="lbl">先に解決 →</div>
+    <div id="chain-empty" style="color:#444;font-size:.8em;margin-left:10px">チェーンエリア（空）</div>
+  </div>
+
+  <!-- Action bar -->
+  <div id="abar">
+    <span id="amsg">接続してください</span>
+    <button class="ab" id="btn-pass" onclick="act('PASS')" disabled>パス</button>
+    <button class="ab" id="btn-exc" onclick="act('CHAIN_EXCEED')" disabled>エクシードをチェーン</button>
+    <button class="ab" id="btn-pri-pay" onclick="act('PAY_PRIORITY')" disabled style="background:#f8f5e0;border-color:#aa8">優先権マーカー使用</button>
+    <button class="ab red" id="btn-use-vol" onclick="act('PAY_VOLTAGE')" disabled>ボルテージでコスト払う</button>
+    <button class="ab red" id="btn-discard" onclick="act('DISCARD_CHAIN')" disabled style="background:#3a1515;border-color:#744;color:#fff">廃棄</button>
+    <button class="ab" id="btn-confirm" onclick="act('CONFIRM_COST')" disabled style="background:#e0f5f5;border-color:#2a8888">確定</button>
+    <button class="ab red" id="btn-no-block" onclick="act('NO_BLOCK')" disabled>ブロックしない</button>
+  </div>
+
+  <!-- My area -->
+  <div class="parea" id="my-area">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:3px">
+      <div class="pzone" id="my-pzone"><span>自分</span><span id="my-pri" style="color:#ffd;display:none">★優先権</span></div>
+      <span class="zlbl" id="my-pm" style="color:#cc9;display:none">🏅優先権マーカー</span>
+      <span class="zlbl">AEトラッシュ: <span id="my-ae">0</span></span>
+    </div>
+    <div class="zone vz" id="my-vz"><span class="zlbl">ボルテージ <span class="cnt" id="my-vc">0</span>/7</span></div>
+    <div class="zone mz" id="my-mz"><span class="zlbl">マナゾーン</span></div>
+    <div class="zone bz" id="my-bz"><span class="zlbl">バトルゾーン</span></div>
+    <div class="zone hand" id="my-hand"><span class="zlbl">手札</span></div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+      <span class="zlbl">デッキ <span class="cnt" id="my-dc">0</span></span>
+      <div class="card fd no-hover" style="cursor:default"><span style="text-align:center;padding:30px 20px;font-size:1.3em;display:block">▣</span></div>
+      <span class="zlbl">トラッシュ <span class="cnt" id="my-tc">0</span></span>
+    </div>
+  </div>
+
+  <div id="glog"></div>
+</div>
+
+<!-- Modal -->
+<div id="modal">
+  <div id="mbox">
+    <div id="mtitle"></div>
+    <div id="mcont"></div>
+    <div id="macts"></div>
+  </div>
+</div>
+
+<script>
+// ===== CARD DATABASE =====
+const DB = {
+  koryu:  {id:'koryu',  name:'こーりゅー',          cost:1, type:'unit',   atk:1, def:1, hanko:false,
+    eff:'破壊時: 相手の攻撃力2以下のユニット1体を破壊する', onDestroy:'DESTROY_WEAK', onUse:'SUMMON'},
+  istil:  {id:'istil',  name:'氷牙の尖 イスティル',  cost:1, type:'unit',   atk:2, def:2, hanko:false, onUse:'SUMMON'},
+  hunter: {id:'hunter', name:'猛き牙の狩人',          cost:2, type:'unit',   atk:3, def:3, hanko:false, onUse:'SUMMON'},
+  fight:  {id:'fight',  name:'Fight!',               cost:1, type:'attack', power:1, atkMode:'unit',
+    eff:'自分のユニット1体で攻撃する', onUse:'UNIT_ATK'},
+  arms:   {id:'arms',   name:'Arms!',                cost:2, type:'attack', power:2, atkMode:'unit_or_player',
+    eff:'自分のユニット1体、またはあなたが攻撃する', onUse:'UNIT_OR_PLAYER_ATK'},
+  smash:  {id:'smash',  name:'スマッシュ！',          cost:3, type:'attack', power:4, atkMode:'player',
+    eff:'あなたが攻撃する', onUse:'PLAYER_ATK'},
+  kamae:  {id:'kamae',  name:'構え、襲え',            cost:2, type:'spell',  hanko:true,
+    eff:'相手のユニット1体を破壊する', onUse:'DESTROY_UNIT'},
+  tane:   {id:'tane',   name:'種と仕掛けと',          cost:1, type:'spell',  hanko:false,
+    eff:'カードを2枚引く', onUse:'DRAW2'},
+  meiso:  {id:'meiso',  name:'瞑想(研ぎ澄ませ)',      cost:2, type:'spell',  hanko:true,
+    eff:'デッキ上1枚を見て手札またはマナゾーンへ', onUse:'SCRY1'},
+  icicle: {id:'icicle', name:'Icicle bite',           cost:1, type:'spell',  hanko:false,
+    eff:'相手のユニット2体をタップする', onUse:'TAP2'},
+};
+const EXCEED_DEF = {
+  id:'triattack', name:'トライアタック', baseCost:5, type:'exceed',
+  power:4, eff:'あなたが3回攻撃する', onUse:'ATK3X'
+};
+const AE_POOL = ['DRAW1','DRAW1','MANA_TOP','MANA_TOP','TRASH_HAND','TAP_UNTAP','SELF_DMG','DISCARD_VOLT'];
+const AE_NAME = {
+  DRAW1:'AE:ドロー1', MANA_TOP:'AE:マナセット', TRASH_HAND:'AE:回収',
+  TAP_UNTAP:'AE:タップ操作', SELF_DMG:'AE:1ダメ', DISCARD_VOLT:'AE:ボルテ廃棄'
+};
+
+// ===== UTILS =====
+function shuffle(a){
+  const r=[...a];
+  for(let i=r.length-1;i>0;i--){
+    const j=Math.floor(Math.random()*(i+1));
+    [r[i],r[j]]=[r[j],r[i]];
+  }
+  return r;
+}
+let _uid=0;
+function uid(){ return 'c'+(++_uid); }
+function buildDeck(){
+  const cnt={koryu:4,istil:4,hunter:4,fight:4,arms:4,smash:4,kamae:4,tane:4,meiso:4,icicle:4};
+  let d=[];
+  for(const [id,n] of Object.entries(cnt))
+    for(let i=0;i<n;i++) d.push({...DB[id], uid:uid()});
+  return shuffle(d);
+}
+function opp(role){ return role==='host'?'guest':'host'; }
+function log(msg){
+  const el=document.getElementById('glog');
+  el.innerHTML+=`<div>${msg}</div>`;
+  el.scrollTop=el.scrollHeight;
+}
+function cardClass(c){
+  if(!c||c.fd) return 'card fd';
+  if(c.type==='unit')   return 'card unt';
+  if(c.type==='attack') return 'card atk';
+  if(c.type==='spell')  return 'card spl';
+  if(c.type==='exceed') return 'card exc';
+  return 'card';
+}
+
+// ===== NETWORK =====
+let myPeer, myConn, isHost=false, myRole=null, G=null, gameStarted=false;
+
+document.addEventListener('DOMContentLoaded', ()=>{
+  const roomId = String(Math.floor(100000 + Math.random() * 900000));
+  myPeer = new Peer(roomId, {debug:0});
+  myPeer.on('open', id=>{
+    document.getElementById('lstatus').textContent='接続完了';
+    document.getElementById('lmain').style.display='flex';
+    document.getElementById('peer-id-box').textContent=id;
+  });
+  myPeer.on('connection', conn=>{ myConn=conn; setupConn(); });
+  myPeer.on('error', e=>document.getElementById('lstatus').textContent='エラー: '+e.type);
+});
+
+function createGame(){
+  isHost=true; myRole='host';
+  document.getElementById('lmain').style.display='none';
+  document.getElementById('lwait').style.display='flex';
+}
+function joinGame(){
+  const id=document.getElementById('join-input').value.trim();
+  if(!id) return;
+  isHost=false; myRole='guest';
+  myConn=myPeer.connect(id, {reliable:true});
+  setupConn();
+}
+function setupConn(){
+  myConn.on('open', ()=>{
+    log('接続確立');
+    if(!isHost) myConn.send({t:'READY'});
+  });
+  myConn.on('data', onMsg);
+  myConn.on('close', ()=>log('接続が切れました'));
+}
+function onMsg(msg){
+  if(msg.t==='READY' && isHost && !G){ startGame(); }
+  else if(msg.t==='STATE'){
+    G=msg.s;
+    if(!isHost && !gameStarted){
+      gameStarted=true;
+      document.getElementById('lobby').style.display='none';
+      document.getElementById('game').style.display='flex';
+      document.getElementById('srole').textContent='（ゲスト / 後攻）';
+      log('接続完了：ゲーム開始！後攻: ゲスト');
+    }
+    renderAll();
+  }
+  else if(msg.t==='ACT' && isHost){ handleAction(msg.a); }
+}
+// ゲストはアクションをホストへ送信；ホストは直接処理
+function act(type, data={}){
+  const action={type, from:myRole, ...data};
+  if(isHost) handleAction(action);
+  else myConn.send({t:'ACT', a:action});
+}
+// ホストがゲストへ状態を送信し、自分も再描画
+function broadcast(){
+  if(myConn&&myConn.open) myConn.send({t:'STATE', s:guestView()});
+  renderAll();
+}
+// ゲストに送る際、非公開情報をマスク
+function guestView(){
+  const maskMana=mana=>mana.map(c=>({uid:c.uid,fd:true,tapped:c.tapped}));
+  return {...G, players:{
+    host:{...G.players.host,
+      hand: G.players.host.hand.map(c=>({uid:c.uid,fd:true})),
+      deck: G.players.host.deck.map((_,i)=>({uid:'hd'+i,fd:true})),
+      mana: maskMana(G.players.host.mana)
+    },
+    guest:{...G.players.guest,
+      mana: maskMana(G.players.guest.mana)
+    }
+  }};
+}
+
+// ===== GAME INIT =====
+function startGame(){
+  gameStarted=true;
+  document.getElementById('lobby').style.display='none';
+  document.getElementById('game').style.display='flex';
+  document.getElementById('srole').textContent=isHost?'（ホスト / 先攻）':'（ゲスト / 後攻）';
+  if(!isHost) return; // ゲスト側は状態初期化しない
+
+  const hd=buildDeck(), gd=buildDeck();
+  const hh=hd.splice(0,7), hm=hd.splice(0,3).map(c=>({...c,tapped:false}));
+  const gh=gd.splice(0,7), gm=gd.splice(0,3).map(c=>({...c,tapped:false}));
+
+  G={
+    phase:'chain',
+    priority:'host',
+    chainArea:[],
+    passes:0,
+    resolvePtr:-1,
+    pending:null,
+    pendingQ:[],
+    costPending:null,
+    priorityMarkerHolder:null,
+    atkBoostCtx:null,
+    winner:null,
+    players:{
+      host:{hand:hh,deck:hd,mana:hm,battle:[],voltage:[],trash:[],
+            aeTrash:shuffle([...AE_POOL]),priorityTapped:false},
+      guest:{hand:gh,deck:gd,mana:gm,battle:[],voltage:[],trash:[],
+             aeTrash:[],priorityTapped:false}
+    }
+  };
+  buildChainArea();
+  log('ゲーム開始！先攻: ホスト');
+  broadcast();
+}
+
+// ===== ACTION DISPATCH =====
+function handleAction(a){
+  if(G.winner) return;
+  const actor=a.from||'host';
+  switch(a.type){
+    case 'CHAIN_CARD':     doChainCard(actor, a.uid); break;
+    case 'CHAIN_EXCEED':   doChainExceed(actor); break;
+    case 'PASS':           doPass(actor); break;
+    case 'PAY_MANA':       doPayMana(actor, a.uid); break;
+    case 'PAY_VOLTAGE':    doPayVoltage(actor); break;
+    case 'PAY_PRIORITY':   doPayPriority(actor); break;
+    case 'CONFIRM_COST':   doConfirmCost(actor); break;
+    case 'DISCARD_CHAIN':  doDiscardChain(actor); break;
+    case 'CHOOSE_ATK_SRC': doChooseAtkSrc(actor, a.uid); break;
+    case 'CHOOSE_ATK_MODE':doChooseAtkMode(actor, a.mode); break;
+    case 'BLOCK':          doBlock(actor, a.uid); break;
+    case 'NO_BLOCK':       doNoBlock(actor); break;
+    case 'CHOOSE_TARGET':  doChooseTarget(actor, a.uid); break;
+    case 'CHOOSE_SCRY':    doChooseScry(actor, a.choice); break;
+    case 'HANKI_CHOICE':   doHankiChoice(actor, a.choice); break;
+    case 'AE_CHOICE':      doAEChoice(actor, a.uid); break;
+    case 'AE_CONFIRM':     doAEConfirm(actor); break;
+    case 'AE_SKIP':        doAESkip(actor); break;
+    case 'AE_TAP_ACTION':  doAETapAction(actor, a.uid, a.action); break;
+  }
+}
+
+// ===== ATOMIC FUNCTIONS =====
+// ── 状態変化系 ──
+function aDraw(role, n){
+  const p=G.players[role];
+  for(let i=0;i<n;i++){
+    if(!p.deck.length){
+      if(!p.trash.length){ log(`${role}のデッキ・トラッシュが空！敗北`); G.winner=opp(role); return; }
+      p.deck=shuffle(p.trash); p.trash=[];
+      log(`${role}のトラッシュをシャッフルしてデッキへ`);
+    }
+    p.hand.push(p.deck.shift());
+  }
+}
+
+function aDealDamage(role, amount){
+  const p=G.players[role];
+  for(let i=0;i<amount;i++){
+    if(!p.deck.length){
+      if(!p.trash.length){ G.winner=opp(role); return; }
+      p.deck=shuffle(p.trash); p.trash=[];
+    }
+    const dmgCard=p.deck.shift();
+    dmgCard.voltFaceUp=true;
+    p.voltage.push(dmgCard);
+    log(`${role}がダメージを受けた → ボルテージ ${p.voltage.length}/7`);
+    if(p.voltage.length>=7){ G.winner=opp(role); log(`${role}のボルテージが7枚！${G.winner}の勝利！`); return; }
+    if(dmgCard.hanko){
+      log(`⚑反旗発動: ${dmgCard.name}`);
+      G.pendingQ.push({type:'HANKI', card:dmgCard, owner:role});
+    }
+  }
+}
+
+function aDestroyUnit(role, uid){
+  const p=G.players[role];
+  const idx=p.battle.findIndex(c=>c.uid===uid);
+  if(idx<0) return null;
+  const [card]=p.battle.splice(idx,1);
+  p.trash.push(card);
+  log(`${card.name}(${role})が破壊された`);
+  const fn=DESTROY_EFFECTS[card.onDestroy];
+  if(fn) fn(role, opp(role));
+  return card;
+}
+
+function aTap(role, zone, uid){
+  const c=G.players[role][zone].find(b=>b.uid===uid);
+  if(c){ c.tapped=true; log(`${c.name}をタップ`); }
+}
+
+function aUntap(role, zone, uid){
+  const c=G.players[role][zone].find(b=>b.uid===uid);
+  if(c){ c.tapped=false; log(`${c.name}をアンタップ`); }
+}
+
+function aSummon(actor, card){
+  G.players[actor].battle.push({...card, tapped:false});
+  log(`${card.name}をバトルゾーンに召喚`);
+}
+
+function aAddMana(role, source, tapped){
+  const p=G.players[role];
+  if(source==='deck_top'){
+    if(!p.deck.length) return;
+    p.mana.push({...p.deck.shift(), tapped});
+  }
+}
+
+function aMoveToTrash(role, card){
+  G.players[role].trash.push(card);
+}
+
+function aMoveToHand(role, card){
+  G.players[role].hand.push(card);
+}
+
+// ── アタック系（G.pendingをセットするのみ、broadcast不要）──
+function aPlayerAttack(actor, power, chainIdx){
+  log(`${actor}がプレイヤーアタック！(攻撃力${power})`);
+  G.pending={type:'BLOCK_CHOICE', attacker:'player', attackPower:power, actor, chainIdx};
+}
+
+function aUnitAttack(actor, unitUid, extraPower, chainIdx){
+  const u=G.players[actor].battle.find(c=>c.uid===unitUid);
+  if(!u||u.tapped) return;
+  u.tapped=true;
+  u.atk=(u.atk||0)+extraPower;
+  u._atkBoost=extraPower;
+  G.atkBoostCtx={role:actor, uid:unitUid};
+  const effPow=u.atk;
+  log(`${u.name}でユニットアタック！(実効攻撃力${effPow})`);
+  G.pending={type:'BLOCK_CHOICE', attacker:'unit', attackerUid:unitUid, attackPower:effPow, actor, chainIdx};
+}
+
+// ── 選択ペンディング系 ──
+function aChooseTarget(actor, opts){
+  G.pending={type:'TARGET', actor, ...opts};
+}
+
+function aChooseAtkSrc(actor, card, chainIdx, mode){
+  if(mode==='unit_or_player'){
+    G.pending={type:'CHOOSE_ATK_MODE', card, actor, chainIdx};
+  } else {
+    G.pending={type:'CHOOSE_ATK_SRC', card, actor, chainIdx, mode:'unit'};
+  }
+}
+
+function aChooseScry(actor, chainIdx){
+  G.pending={type:'SCRY', card:G.players[actor].deck[0], actor, chainIdx};
+}
+
+function aChooseTapUntap(actor){
+  G.pending={type:'AE_TAP_UNTAP', actor, chainIdx:null};
+}
+
+function aChooseTrashHand(actor){
+  G.pending={type:'AE_TRASH_HAND', actor, chainIdx:null};
+}
+
+function aChooseDiscardVolt(actor){
+  G.pending={type:'AE_DISCARD_VOLT', actor, chainIdx:null};
+}
+
+// ── チェーンボーナス ──
+function triggerCB(actor){
+  aDraw(actor, 1);
+  aAddMana(actor, 'deck_top', false);
+}
+
+// ===== EFFECT TABLES =====
+const DESTROY_EFFECTS = {
+  DESTROY_WEAK: (destroyer, owner) => {
+    G.pendingQ.push({type:'DESTROY_WEAK', destroyer, owner});
+  },
+};
+
+const CARD_EFFECTS = {
+  SUMMON: (card, actor, chainIdx) => {
+    aSummon(actor, card);
+    triggerAE(chainIdx, actor);
+  },
+  UNIT_ATK: (card, actor, chainIdx) => {
+    const available=G.players[actor].battle.filter(c=>!c.tapped);
+    if(!available.length){
+      log(`${card.name}: 攻撃可能なユニットなし→廃棄`);
+      aMoveToTrash(actor, card);
+      triggerAE(chainIdx, actor);
+      return;
+    }
+    aChooseAtkSrc(actor, card, chainIdx, 'unit');
+  },
+  UNIT_OR_PLAYER_ATK: (card, actor, chainIdx) => {
+    aChooseAtkSrc(actor, card, chainIdx, 'unit_or_player');
+  },
+  PLAYER_ATK: (card, actor, chainIdx) => {
+    aMoveToTrash(actor, card);
+    aPlayerAttack(actor, card.power, chainIdx);
+  },
+  ATK3X: (card, actor, chainIdx) => {
+    aMoveToTrash(actor, card);
+    G.pendingQ.push({type:'ATK3X', actor, power:card.power, remaining:3, chainIdx});
+    triggerAE(chainIdx, actor);
+  },
+  DRAW2: (card, actor, chainIdx) => {
+    aMoveToTrash(actor, card);
+    aDraw(actor, 2);
+    triggerAE(chainIdx, actor);
+  },
+  DESTROY_UNIT: (card, actor, chainIdx) => {
+    aMoveToTrash(actor, card);
+    const oppRole=opp(actor);
+    if(!G.players[oppRole].battle.length){
+      log('相手ユニットなし');
+      triggerAE(chainIdx, actor);
+    } else {
+      aChooseTarget(actor, {effect:'DESTROY_UNIT',
+        targets:G.players[oppRole].battle.map(c=>c.uid), targetOwner:oppRole, chainIdx});
+    }
+  },
+  SCRY1: (card, actor, chainIdx) => {
+    aMoveToTrash(actor, card);
+    if(!G.players[actor].deck.length){ triggerAE(chainIdx, actor); return; }
+    aChooseScry(actor, chainIdx);
+  },
+  TAP2: (card, actor, chainIdx) => {
+    aMoveToTrash(actor, card);
+    const oppRole=opp(actor);
+    const targets=G.players[oppRole].battle.filter(c=>!c.tapped).map(c=>c.uid);
+    if(!targets.length){ log('タップ可能ユニットなし'); triggerAE(chainIdx, actor); return; }
+    aChooseTarget(actor, {effect:'TAP2', targets, targetOwner:oppRole, chainIdx, count:2, chosen:[]});
+  },
+};
+
+const AE_EFFECTS = {
+  DRAW1:        (actor) => { aDraw(actor, 1); },
+  MANA_TOP:     (actor) => { aAddMana(actor, 'deck_top', true); },
+  TRASH_HAND:   (actor) => { if(G.players[actor].trash.length) aChooseTrashHand(actor); },
+  TAP_UNTAP:    (actor) => { aChooseTapUntap(actor); },
+  SELF_DMG:     (actor) => { aDealDamage(actor, 1); },
+  DISCARD_VOLT: (actor) => { if(G.players[actor].voltage.length) aChooseDiscardVolt(actor); },
+};
+
+// ===== CHAIN AREA =====
+function buildChainArea(){
+  // 残留AEマーカー（前チェーンで未使用分）
+  const remaining=[];
+  for(let i=2;i<G.chainArea.length;i++){
+    if(!G.chainArea[i].card && G.chainArea[i].aeType) remaining.push(G.chainArea[i].aeType);
+  }
+  // 優先権プレイヤーと相手のAEトラッシュ
+  const priAE=[...G.players[G.priority].aeTrash];
+  G.players[G.priority].aeTrash=[];
+  const oppAE=[...G.players[opp(G.priority)].aeTrash];
+  G.players[opp(G.priority)].aeTrash=[];
+
+  const allAE=[...remaining, ...priAE, ...oppAE];
+  G.chainArea=[
+    {aeType:null, card:null, owner:null, resolved:false}, // 1stエリア（CB）
+    {aeType:null, card:null, owner:null, resolved:false}, // 2ndエリア（CB）
+    ...allAE.map(ae=>({aeType:ae, card:null, owner:null, resolved:false}))
+  ];
+  log(`チェーンエリア構築: CB×2 + AE×${allAE.length}（残${remaining.length} 自${priAE.length} 相${oppAE.length}）`);
+}
+
+// ===== CHAIN PHASE ACTIONS =====
+function doChainCard(actor, cardUid){
+  if(G.phase!=='chain') return;
+  if(G.priority!==actor) return;
+  const p=G.players[actor];
+  const idx=p.hand.findIndex(c=>c.uid===cardUid);
+  if(idx<0) return;
+  const [card]=p.hand.splice(idx,1);
+  const chainIdx=G.chainArea.findIndex(s=>s.card===null);
+  if(chainIdx<0) return;
+  const slotNum=chainIdx+1;
+  const slot=G.chainArea[chainIdx];
+  slot.card=card; slot.owner=actor; slot.resolved=false;
+  G.passes=0;
+
+  if(slotNum<=2){
+    // チェーンボーナス（CB）: ドロー1 + マナセット1
+    triggerCB(actor);
+    log(`${card.name}を${slotNum}stエリアにチェーン（CBボーナス: ドロー+マナ）`);
+  } else {
+    log(`${card.name}を${slotNum}thエリアにチェーン（${slot.aeType?AE_NAME[slot.aeType]:'AEなし'}）`);
+  }
+
+  // アンチェーン: タップ済みカードを最大2枚アンタップ
+  let untapped=0;
+  for(const c of [...G.players[actor].mana, ...G.players[actor].battle]){
+    if(c.tapped && untapped<2){ c.tapped=false; untapped++; }
+  }
+  G.priority=opp(actor);
+  broadcast();
+}
+
+function doChainExceed(actor){
+  if(G.phase!=='chain') return;
+  if(G.priority!==actor) return;
+  const chainIdx=G.chainArea.findIndex(s=>s.card===null);
+  if(chainIdx<0 || chainIdx>=2) return; // 1st/2ndエリアのみ
+  const p=G.players[actor];
+  const exc={...EXCEED_DEF, uid:uid(), owner:actor};
+  exc.effectiveCost=EXCEED_DEF.baseCost; // 表示用仮値。支払い確定時に再計算
+  const slot=G.chainArea[chainIdx];
+  slot.card=exc; slot.owner=actor; slot.resolved=false; slot.isExceed=true;
+  G.passes=0;
+  log(`${actor}がエクシード(トライアタック)をチェーン [基本コスト${EXCEED_DEF.baseCost}]`);
+
+  // アンチェーン
+  let untapped=0;
+  for(const c of [...p.mana, ...p.battle]){
+    if(c.tapped && untapped<2){ c.tapped=false; untapped++; }
+  }
+  G.priority=opp(actor);
+  broadcast();
+}
+
+function doPass(actor){
+  if(G.phase!=='chain') return;
+  if(G.priority!==actor) return;
+  const hasCard=G.chainArea.some(s=>s.card!==null);
+  if(!hasCard) return; // 最初のカードは必ずチェーンする
+  G.passes++;
+  log(`${actor}がパス`);
+  if(G.passes>=2){
+    G.priorityMarkerHolder=opp(actor); // 最後にパスした相手が優先権マーカーを受け取る
+    startResolution();
+  } else {
+    G.priority=opp(actor);
+    broadcast();
+  }
+}
+
+// ===== RESOLUTION =====
+function startResolution(){
+  G.phase='resolution';
+  G.resolvePtr=-1;
+  for(let i=G.chainArea.length-1;i>=0;i--){
+    if(G.chainArea[i].card!==null){ G.resolvePtr=i; break; }
+  }
+  G.players.host.priorityTapped=false;
+  G.players.guest.priorityTapped=false;
+  log('===解決フェイズ開始===');
+  broadcast();
+  advanceResolution();
+}
+
+function advanceResolution(){
+  // ペンディングキューを優先処理
+  if(G.pendingQ.length){
+    const pnd=G.pendingQ.shift();
+    processPendingItem(pnd);
+    broadcast();
+    return;
+  }
+  // 攻撃力ブースト解除（pendingQ空＝ブロック後のDESTROY_EFFECTS含む攻撃処理が完全終了）
+  if(G.atkBoostCtx){
+    const {role, uid}=G.atkBoostCtx;
+    const bu=G.players[role].battle.find(c=>c.uid===uid);
+    if(bu && bu._atkBoost){ bu.atk-=bu._atkBoost; delete bu._atkBoost; }
+    G.atkBoostCtx=null;
+  }
+  // 解決済み・カードなしスロットをスキップ
+  while(G.resolvePtr>=0 && (G.chainArea[G.resolvePtr].resolved || !G.chainArea[G.resolvePtr].card)){
+    G.resolvePtr--;
+  }
+  if(G.resolvePtr<0){ endResolution(); return; }
+  const slot=G.chainArea[G.resolvePtr];
+  log(`--- ${G.resolvePtr+1}thエリアを解決: ${slot.card.name}(${slot.owner}) ---`);
+  let costNeeded;
+  if(slot.card.type==='exceed'){
+    const aeDiscount=G.players[slot.owner].aeTrash.length;
+    costNeeded=Math.max(1, EXCEED_DEF.baseCost - aeDiscount);
+    slot.card.effectiveCost=costNeeded; // UIに反映
+    log(`エクシードコスト確定: 基本${EXCEED_DEF.baseCost} - AEトラッシュ${aeDiscount} = ${costNeeded}`);
+  } else {
+    costNeeded=slot.card.cost;
+  }
+  G.costPending={chainIdx:G.resolvePtr, manaSpent:[], voltSpent:0, priSpent:false, needed:costNeeded};
+  G.pending={type:'COST', chainIdx:G.resolvePtr, owner:slot.owner};
+  broadcast();
+}
+
+function endResolution(){
+  G.phase='chain';
+  G.passes=0;
+  G.resolvePtr=-1;
+  G.pending=null;
+  G.costPending=null;
+  G.atkBoostCtx=null;
+  G.players.host.priorityTapped=false;
+  G.players.guest.priorityTapped=false;
+  if(G.priorityMarkerHolder){
+    G.priority=G.priorityMarkerHolder;
+    G.priorityMarkerHolder=null;
+  }
+  log('===チェーンフェイズ開始: チェーンエリア再構築===');
+  buildChainArea();
+  broadcast();
+}
+
+function processPendingItem(pnd){
+  if(pnd.type==='HANKI'){
+    G.pending={type:'HANKI', card:pnd.card, owner:pnd.owner};
+    broadcast();
+  } else if(pnd.type==='HANKI_USE'){
+    const {card, actor}=pnd;
+    const p=G.players[actor];
+    const idx=p.voltage.findIndex(c=>c.uid===card.uid);
+    if(idx>=0) p.voltage.splice(idx,1);
+    useCard(card, actor, -1);
+  } else if(pnd.type==='ATK3X'){
+    if(pnd.remaining<=0){ advanceResolution(); return; }
+    G.pending={type:'BLOCK_CHOICE', attacker:'player', attackPower:pnd.power,
+      actor:pnd.actor, chainIdx:pnd.chainIdx, _atk3x:{...pnd, remaining:pnd.remaining-1}};
+    broadcast();
+  } else if(pnd.type==='DESTROY_WEAK'){
+    const targets=G.players[pnd.owner].battle.filter(c=>c.atk<=2).map(c=>c.uid);
+    if(!targets.length){ broadcast(); setTimeout(advanceResolution,50); return; }
+    G.pending={type:'TARGET', effect:'DESTROY_UNIT', actor:pnd.destroyer,
+      chainIdx:-1, targets, targetOwner:pnd.owner};
+    broadcast();
+  }
+}
+
+// ===== COST PAYMENT =====
+function doPayMana(actor, manaUid){
+  if(!G.costPending) return;
+  const slot=G.chainArea[G.costPending.chainIdx];
+  if(slot.owner!==actor) return;
+  const p=G.players[actor];
+  const mc=p.mana.find(c=>c.uid===manaUid);
+  if(!mc) return;
+  const spentIdx=G.costPending.manaSpent.indexOf(manaUid);
+  if(spentIdx>=0){
+    // 支払い取り消し
+    G.costPending.manaSpent.splice(spentIdx,1);
+    mc.tapped=false;
+    broadcast(); return;
+  }
+  if(G.costPending.manaSpent.length>=G.costPending.needed) return;
+  if(mc.tapped) return; // 既にタップ済みは使えない
+  mc.tapped=true;
+  G.costPending.manaSpent.push(manaUid);
+  broadcast();
+}
+
+function doPayVoltage(actor){
+  if(!G.costPending) return;
+  const slot=G.chainArea[G.costPending.chainIdx];
+  if(slot.owner!==actor) return;
+  const cp=G.costPending;
+  const alreadyPaid=cp.manaSpent.length+cp.voltSpent+(cp.priSpent?1:0);
+  if(alreadyPaid>=cp.needed) return;
+  if(G.players[actor].voltage.length<=cp.voltSpent) return;
+  cp.voltSpent++;
+  broadcast();
+}
+
+function doPayPriority(actor){
+  if(!G.costPending) return;
+  const slot=G.chainArea[G.costPending.chainIdx];
+  if(slot.owner!==actor) return;
+  if(actor!==G.priorityMarkerHolder) return;
+  if(G.players[actor].priorityTapped) return;
+  const cp=G.costPending;
+  const alreadyPaid=cp.manaSpent.length+cp.voltSpent;
+  if(alreadyPaid>=cp.needed) return;
+  G.players[actor].priorityTapped=true;
+  cp.priSpent=true;
+  broadcast();
+}
+
+function doConfirmCost(actor){
+  if(!G.costPending) return;
+  const cp=G.costPending;
+  const slot=G.chainArea[cp.chainIdx];
+  if(slot.owner!==actor) return;
+  const paid=cp.manaSpent.length+cp.voltSpent+(cp.priSpent?1:0);
+  if(paid<cp.needed){ log('コスト不足'); return; }
+  // ボルテージコスト適用（裏向きにして残す）
+  const p=G.players[actor];
+  const faceUpCards=p.voltage.filter(c=>c.voltFaceUp);
+  for(let i=0;i<cp.voltSpent;i++){
+    const vc=faceUpCards[faceUpCards.length-1-i];
+    if(vc){ vc.voltFaceUp=false; log(`${actor}がボルテージを消費(コスト): ${vc.name}`); }
+  }
+  slot.resolved=true;
+  G.costPending=null;
+  G.pending=null;
+  useCard(slot.card, actor, cp.chainIdx);
+}
+
+function doDiscardChain(actor){
+  if(!G.costPending) return;
+  const cp=G.costPending;
+  const slot=G.chainArea[cp.chainIdx];
+  if(slot.owner!==actor) return;
+  // タップしたマナを戻す
+  const p=G.players[actor];
+  for(const u of cp.manaSpent){
+    const mc=p.mana.find(c=>c.uid===u);
+    if(mc) mc.tapped=false;
+  }
+  if(cp.priSpent) p.priorityTapped=false;
+  slot.resolved=true;
+  p.trash.push(slot.card);
+  if(cp.chainIdx>=2 && slot.aeType){
+    G.players[actor].aeTrash.push(slot.aeType);
+    slot.aeType=null;
+    log(`${actor}のAEトラッシュにマーカー追加（AE未発動）`);
+  }
+  G.costPending=null;
+  G.pending=null;
+  log(`${actor}がカードをトラッシュに置いた: ${slot.card.name}`);
+  advanceResolution();
+  broadcast();
+}
+
+// ===== CARD USE =====
+function useCard(card, actor, chainIdx){
+  log(`${actor}が${card.name}を使用！`);
+  const fn=CARD_EFFECTS[card.onUse];
+  if(fn) fn(card, actor, chainIdx);
+  else log(`未知のonUse: ${card.onUse}`);
+  checkWin();
+  broadcast();
+  if(!G.winner && !G.pending) advanceResolution();
+}
+
+function triggerAE(chainIdx, actor){
+  const slot=G.chainArea[chainIdx];
+  if(!slot||!slot.aeType) return;
+  const ae=slot.aeType;
+  G.players[actor].aeTrash.push(ae);
+  slot.aeType=null;
+  log(`AE発動: ${AE_NAME[ae]} → ${actor}のAEトラッシュへ`);
+  const fn=AE_EFFECTS[ae];
+  if(fn) fn(actor);
+  checkWin();
+  broadcast();
+}
+
+// ===== ATTACK & BLOCK =====
+function doPlayerAttack(actor, power, chainIdx){
+  log(`${actor}がプレイヤーアタック！(攻撃力${power})`);
+  G.pending={type:'BLOCK_CHOICE', attacker:'player', attackPower:power, actor, chainIdx};
+  broadcast();
+}
+
+function doUnitAttack(actor, unitUid, power, chainIdx){
+  const u=G.players[actor].battle.find(c=>c.uid===unitUid);
+  if(!u||u.tapped) return;
+  u.tapped=true;
+  u.atk=(u.atk||0)+power;   // 攻撃処理中のみブースト
+  u._atkBoost=power;          // 後で元に戻すために記録
+  G.atkBoostCtx={role:actor, uid:unitUid};
+  const effPow=u.atk;
+  log(`${u.name}でユニットアタック！(実効攻撃力${effPow})`);
+  G.pending={type:'BLOCK_CHOICE', attacker:'unit', attackerUid:unitUid, attackPower:effPow, actor, chainIdx};
+  broadcast();
+}
+
+function doChooseAtkSrc(actor, unitUid){
+  if(!G.pending||G.pending.type!=='CHOOSE_ATK_SRC') return;
+  if(G.pending.actor!==actor) return;
+  const {card, chainIdx}=G.pending;
+  G.players[actor].trash.push(card);
+  G.pending=null;
+  aUnitAttack(actor, unitUid, card.power, chainIdx);
+  broadcast();
+}
+
+function doChooseAtkMode(actor, mode){
+  if(!G.pending||G.pending.type!=='CHOOSE_ATK_MODE') return;
+  if(G.pending.actor!==actor) return;
+  const {card, chainIdx}=G.pending;
+  G.pending=null;
+  if(mode==='player'){
+    G.players[actor].trash.push(card);
+    aPlayerAttack(actor, card.power, chainIdx);
+    broadcast();
+  } else {
+    const available=G.players[actor].battle.filter(c=>!c.tapped);
+    if(!available.length){
+      log(`${card.name}: 攻撃可能なユニットなし→廃棄`);
+      G.players[actor].trash.push(card);
+      triggerAE(chainIdx, actor);
+      if(!G.winner && !G.pending) advanceResolution();
+      return;
+    }
+    // カードはdoChooseAtkSrcでトラッシュされる（二重登録防止）
+    aChooseAtkSrc(actor, card, chainIdx, 'unit');
+    broadcast();
+  }
+}
+
+function doBlock(actor, unitUid){
+  if(!G.pending||G.pending.type!=='BLOCK_CHOICE') return;
+  const pnd=G.pending;
+  const blocker=G.players[actor].battle.find(c=>c.uid===unitUid&&!c.tapped);
+  if(!blocker) return;
+  blocker.tapped=true;
+  const {attackPower, actor:atkActor, chainIdx, _atk3x}=pnd;
+  G.pending=null;
+  log(`${actor}がブロック: ${blocker.name}(守備${blocker.def}) vs 攻撃力${attackPower}`);
+  if(attackPower>blocker.def){ aDestroyUnit(actor, unitUid); log('ブロックユニット破壊！'); }
+  else { log('ブロック成功'); }
+  closeModal();
+  checkWin(); broadcast();
+  if(!G.winner){
+    if(_atk3x && _atk3x.remaining>0) G.pendingQ.unshift({..._atk3x, type:'ATK3X'});
+    else triggerAE(chainIdx, atkActor);
+    if(!G.pending) setTimeout(advanceResolution, 50);
+  }
+}
+
+function doNoBlock(actor){
+  if(!G.pending||G.pending.type!=='BLOCK_CHOICE') return;
+  const pnd=G.pending;
+  const {actor:atkActor, chainIdx, _atk3x}=pnd;
+  G.pending=null;
+  log(`ブロックなし → ${actor}がダメージを受ける`);
+  aDealDamage(actor, 1);
+  closeModal();
+  checkWin(); broadcast();
+  if(!G.winner){
+    if(_atk3x && _atk3x.remaining>0) G.pendingQ.unshift({..._atk3x, type:'ATK3X'});
+    else triggerAE(chainIdx, atkActor);
+    if(!G.pending) setTimeout(advanceResolution, 50);
+  }
+}
+
+// ===== SPELL TARGETS & CHOICES =====
+function doChooseTarget(actor, targetUid){
+  if(!G.pending||G.pending.type!=='TARGET') return;
+  if(G.pending.actor!==actor) return;
+  const {effect, chainIdx, targetOwner}=G.pending;
+  if(effect==='DESTROY_UNIT'){
+    G.pending=null;
+    aDestroyUnit(targetOwner, targetUid);
+    checkWin(); broadcast();
+    if(!G.winner) triggerAE(chainIdx, actor);
+    if(!G.winner && !G.pending) setTimeout(advanceResolution, 50);
+  } else if(effect==='TAP2'){
+    G.pending.chosen.push(targetUid);
+    const target=G.players[targetOwner].battle.find(c=>c.uid===targetUid);
+    if(target) target.tapped=true;
+    if(G.pending.chosen.length>=2 || G.pending.chosen.length>=G.pending.targets.length){
+      const ci=G.pending.chainIdx;
+      G.pending=null;
+      broadcast();
+      if(!G.winner) triggerAE(ci, actor);
+      if(!G.winner && !G.pending) setTimeout(advanceResolution, 50);
+    } else {
+      G.pending.targets=G.pending.targets.filter(u=>!G.pending.chosen.includes(u));
+      broadcast();
+    }
+  }
+}
+
+function doChooseScry(actor, choice){
+  if(!G.pending||G.pending.type!=='SCRY') return;
+  if(G.pending.actor!==actor) return;
+  const {card, chainIdx}=G.pending;
+  G.pending=null;
+  const p=G.players[actor];
+  p.deck.shift();
+  if(choice==='hand') p.hand.push(card);
+  else p.mana.push({...card, tapped:false});
+  log(`瞑想: ${card.name}を${choice==='hand'?'手札':'マナゾーン'}へ`);
+  broadcast();
+  if(!G.winner) triggerAE(chainIdx, actor);
+  if(!G.winner && !G.pending) setTimeout(advanceResolution, 50);
+}
+
+function doHankiChoice(actor, choice){
+  if(!G.pending||G.pending.type!=='HANKI') return;
+  if(G.pending.owner!==actor) return;
+  const card=G.pending.card;
+  G.pending=null;
+  if(choice==='use'){
+    log(`⚑反旗(はんき): ${card.name}を使用`);
+    G.pendingQ.push({type:'HANKI_USE', card, actor});
+  } else {
+    log(`⚑反旗(はんき): ${card.name}を手札へ`);
+    const p=G.players[actor];
+    const idx=p.voltage.findIndex(c=>c.uid===card.uid);
+    if(idx>=0){ p.voltage.splice(idx,1); p.hand.push(card); }
+  }
+  broadcast();
+  advanceResolution();
+}
+
+function doAEConfirm(actor){
+  if(!G.pending || G.pending.actor!==actor) return;
+  G.pending.confirmed=true;
+  broadcast();
+}
+
+function doAESkip(actor){
+  if(!G.pending || G.pending.actor!==actor) return;
+  G.pending=null;
+  broadcast();
+  if(!G.winner) setTimeout(advanceResolution, 50);
+}
+
+function doAETapAction(actor, uid, action){
+  if(!G.pending || G.pending.type!=='AE_TAP_UNTAP' || G.pending.actor!==actor) return;
+  for(const role of ['host','guest']){
+    const c=G.players[role].battle.find(b=>b.uid===uid);
+    if(c){
+      c.tapped=(action==='tap');
+      log(`${c.name}を${action==='tap'?'タップ':'アンタップ'}`);
+      break;
+    }
+  }
+  G.pending=null; broadcast(); setTimeout(advanceResolution, 50);
+}
+
+function doAEChoice(actor, targetUid){
+  if(!G.pending) return;
+  const {type}=G.pending;
+  if(type==='AE_TRASH_HAND'){
+    const p=G.players[actor];
+    const idx=p.trash.findIndex(c=>c.uid===targetUid);
+    if(idx>=0){ const [c]=p.trash.splice(idx,1); p.hand.push(c); log(`トラッシュから${c.name}を回収`); }
+    G.pending=null; broadcast(); setTimeout(advanceResolution, 50);
+  } else if(type==='AE_TAP_UNTAP'){
+    // 対象ユニットを記録し、次のステップ（タップ/アンタップ選択）へ
+    G.pending.targetUid=targetUid;
+    broadcast(); return;
+  } else if(type==='AE_DISCARD_VOLT'){
+    const p=G.players[actor];
+    const idx=p.voltage.findIndex(c=>c.uid===targetUid);
+    if(idx>=0){ const [c]=p.voltage.splice(idx,1); p.trash.push(c); log(`ボルテージ廃棄: ${c.name}`); }
+    G.pending=null; broadcast(); setTimeout(advanceResolution, 50);
+  }
+}
+
+function checkWin(){
+  for(const role of ['host','guest']){
+    if(G.players[role].voltage.length>=7){ G.winner=opp(role); return; }
+  }
+}
+
+// ===== RENDERING =====
+function renderAll(){
+  if(!G) return;
+  const me=myRole, them=opp(me);
+  const mp=G.players[me], tp=G.players[them];
+
+  // ステータスバー
+  document.getElementById('sph').textContent=
+    G.phase==='chain'?'チェーンフェイズ':G.phase==='resolution'?'解決フェイズ':'ゲーム終了';
+  document.getElementById('spr').textContent=
+    G.phase==='chain'?`優先権: ${G.priority===me?'あなた':'相手'}`:'';
+  document.getElementById('svt').textContent=
+    `ボルテージ: 自分${mp.voltage.length}/7  相手${tp.voltage.length}/7`;
+
+  // 自分のエリア
+  renderZoneMana('my-mz', mp.mana, me, true);
+  renderZoneVoltage('my-vz', mp.voltage, 'my-vc', me, true);
+  renderZoneBattle('my-bz', mp.battle, me, true);
+  renderHand('my-hand', mp.hand, me);
+  document.getElementById('my-dc').textContent=mp.deck.length;
+  document.getElementById('my-tc').textContent=mp.trash.length;
+  document.getElementById('my-ae').textContent=mp.aeTrash.length;
+  document.getElementById('my-pri').style.display=(G.phase==='chain'&&G.priority===me)?'block':'none';
+
+  // 相手のエリア
+  renderZoneMana('opp-mz', tp.mana, them, false);
+  renderZoneVoltage('opp-vz', tp.voltage, 'opp-vc', them, false);
+  renderZoneBattle('opp-bz', tp.battle, them, false);
+  const oh=document.getElementById('opp-hand');
+  oh.innerHTML=`<span class="zlbl">手札 <span class="cnt" id="opp-hc">${tp.hand.length}</span></span>`;
+  for(let i=0;i<Math.min(tp.hand.length,8);i++){
+    oh.innerHTML+=`<div class="card fd no-hover" style="width:30px;cursor:default"><span style="display:block;text-align:center;padding:30px 4px;font-size:.8em">▣</span></div>`;
+  }
+  document.getElementById('opp-dc').textContent=tp.deck.length;
+  document.getElementById('opp-tc').textContent=tp.trash.length;
+  document.getElementById('opp-ae').textContent=tp.aeTrash.length;
+  document.getElementById('opp-pri').style.display=(G.phase==='chain'&&G.priority===them)?'block':'none';
+
+  // 優先権マーカー表示
+  const myPM=document.getElementById('my-pm');
+  if(myPM) myPM.style.display=G.priorityMarkerHolder===me?'inline':'none';
+  const oppPM=document.getElementById('opp-pm');
+  if(oppPM) oppPM.style.display=G.priorityMarkerHolder===them?'inline':'none';
+
+  renderChainArea();
+  renderActions();
+
+  if(G.winner){
+    showModal(
+      G.winner===me?'🎉 あなたの勝利！':'😢 敗北…',
+      G.winner===me?'相手のボルテージが7枚に！':'あなたのボルテージが7枚に…',
+      [{label:'閉じる', fn:closeModal}]
+    );
+  } else {
+    renderPending();
+  }
+}
+
+function renderZoneMana(id, mana, role, isMe){
+  const el=document.getElementById(id);
+  el.innerHTML=`<span class="zlbl">マナゾーン <span class="cnt">${mana.length}</span></span>`;
+  const cp=G.costPending;
+  const isCostOwner=isMe && cp && G.chainArea[cp?.chainIdx]?.owner===role;
+  for(const c of mana){
+    const alreadyPaid=cp?(cp.manaSpent.length+cp.voltSpent+(cp.priSpent?1:0)):0;
+    const canPay=isCostOwner && !cp.manaSpent.includes(c.uid) && !c.tapped && alreadyPaid<cp.needed;
+    const canUndo=isCostOwner && cp.manaSpent.includes(c.uid);
+    const cls=canPay?' can-target':canUndo?' sel':'';
+    el.innerHTML+=`<div class="card${c.tapped?' tap':''} fd no-hover${cls}" data-uid="${c.uid}"
+      style="width:36px;min-width:36px;height:52px;cursor:${(canPay||canUndo)?'pointer':'default'}"
+      onclick="${(canPay||canUndo)?`act('PAY_MANA',{uid:'${c.uid}',from:'${role}'})`:''}">
+      <span style="display:block;text-align:center;padding:10px 2px;font-size:1.1em">▣</span>
+    </div>`;
+  }
+}
+
+function renderZoneVoltage(id, voltage, cntId, role, isMe){
+  const el=document.getElementById(id);
+  el.innerHTML=`<span class="zlbl">ボルテージ <span class="cnt" id="${cntId}">${voltage.length}</span>/7</span>`;
+  const pnd=G.pending;
+  const cp=G.costPending;
+  const isVoltDiscard=isMe && pnd?.type==='AE_DISCARD_VOLT' && pnd?.actor===role;
+  const isCostOwner=isMe && cp && G.chainArea[cp?.chainIdx]?.owner===role;
+  voltage.forEach((c,idx)=>{
+    const isPendingCost=isCostOwner && idx>=voltage.length-cp.voltSpent;
+    const cls=isVoltDiscard?' can-target':'';
+    const oc=isVoltDiscard?`act('AE_CHOICE',{uid:'${c.uid}',from:'${role}'})`:'' ;
+    el.innerHTML+=`<div class="card spl no-hover${cls}" style="width:36px;min-width:36px;height:52px;cursor:${isVoltDiscard?'pointer':'default'}" onclick="${oc}">
+      <span style="font-size:.5em;padding:2px">${(c.voltFaceUp&&!isPendingCost)?c.name:'▣'}</span>
+    </div>`;
+  });
+}
+
+function renderZoneBattle(id, battle, role, isMe){
+  const el=document.getElementById(id);
+  el.innerHTML=`<span class="zlbl">バトルゾーン</span>`;
+  const pnd=G.pending;
+  for(const c of battle){
+    let extraClass='', onclick='';
+    // 自分のユニット: 攻撃ソース選択
+    if(isMe && pnd && pnd.type==='CHOOSE_ATK_SRC' && pnd.actor===role && !c.tapped){
+      extraClass=' can-target'; onclick=`act('CHOOSE_ATK_SRC',{uid:'${c.uid}',from:'${role}'})`;
+    }
+    // ターゲット選択（双方のゾーン対応）
+    if(pnd && pnd.type==='TARGET' && pnd.targets?.includes(c.uid)){
+      extraClass=' can-target'; onclick=`act('CHOOSE_TARGET',{uid:'${c.uid}',from:'${myRole}'})`;
+    }
+    // ブロック: 相手の攻撃に対して自分のアンタップユニットでブロック
+    if(isMe && pnd && pnd.type==='BLOCK_CHOICE' && pnd.actor!==role && !c.tapped){
+      extraClass=' can-block'; onclick=`act('BLOCK',{uid:'${c.uid}',from:'${myRole}'})`;
+    }
+    // AE: タップ/アンタップ（対象未選択の間のみカードをクリック可能）
+    if(pnd && pnd.type==='AE_TAP_UNTAP' && !pnd.targetUid){
+      extraClass=' can-target';
+      onclick=`act('AE_CHOICE',{uid:'${c.uid}',from:'${pnd.actor}'})`;
+    }
+    el.innerHTML+=`<div class="${cardClass(c)}${c.tapped?' tap':''}${extraClass}"
+      onclick="${onclick}" data-uid="${c.uid}">
+      <div class="cname">${c.name}</div>
+      <div class="ctype">ユニット</div>
+      <span class="cstats">⚔${c.atk} 🛡${c.def}</span>
+    </div>`;
+  }
+}
+
+function renderHand(id, hand, role){
+  const el=document.getElementById(id);
+  el.innerHTML=`<span class="zlbl">手札 ${hand.length}枚</span>`;
+  const pnd=G.pending;
+  const canChain=G.phase==='chain' && G.priority===role;
+  const isAETH=pnd?.type==='AE_TRASH_HAND' && pnd?.actor===role;
+  for(const c of hand){
+    if(c.fd){
+      el.innerHTML+=`<div class="card fd no-hover" style="width:36px;min-width:36px"><span style="display:block;text-align:center;padding:28px 4px;font-size:.8em">▣</span></div>`;
+      continue;
+    }
+    let extraClass='', onclick='';
+    if(canChain){ extraClass=' can-target'; onclick=`act('CHAIN_CARD',{uid:'${c.uid}',from:'${role}'})`; }
+    if(isAETH){ extraClass=' can-target'; onclick=`act('AE_CHOICE',{uid:'${c.uid}',from:'${role}'})`; }
+    const typeLbl=c.type==='unit'?'ユニット':c.type==='attack'?'アタック':'スペル';
+    el.innerHTML+=`<div class="${cardClass(c)}${extraClass}" onclick="${onclick}">
+      <div class="ccost">${c.cost}</div>
+      <div class="cname">${c.name}</div>
+      <div class="ctype">${c.hanko?'<span class="hankof">⚑</span>':''}${typeLbl}</div>
+      <div class="ceff">${c.eff||''}</div>
+      ${c.type==='unit'?`<span class="cstats">⚔${c.atk} 🛡${c.def}</span>`:
+        c.type==='attack'?`<span class="cstats">⌂+${c.power}</span>`:''}
+    </div>`;
+  }
+}
+
+function renderChainArea(){
+  const slots=document.getElementById('chain-slots');
+  const empty=document.getElementById('chain-empty');
+  const hasAnything=G.chainArea.some((s,i)=>s.card||(i>=2&&s.aeType));
+  if(!hasAnything){ slots.innerHTML=''; empty.style.display='block'; return; }
+  empty.style.display='none';
+  slots.innerHTML='';
+  for(let i=0;i<G.chainArea.length;i++){
+    const s=G.chainArea[i];
+    const slotNum=i+1;
+    if(i<2 && !s.card) continue;
+    if(i>=2 && !s.aeType && !s.card) continue;
+    const markerLabel=slotNum<=2
+      ? `<span class="cslot-marker cb">CB${slotNum}</span>`
+      : s.aeType?`<span class="cslot-marker">${AE_NAME[s.aeType]}</span>`:'';
+    const isResolving=G.phase==='resolution'&&G.resolvePtr===i&&G.pending?.type==='COST';
+    let cardHtml;
+    if(s.card){
+      const isOpp=s.owner!==myRole;
+      const costDisp=s.card.type==='exceed'?s.card.effectiveCost:s.card.cost;
+      const typeLbl=s.card.type==='unit'?'ユニット':s.card.type==='attack'?'アタック':s.card.type==='exceed'?'エクシード':'スペル';
+      cardHtml=`<div class="${cardClass(s.card)}${isResolving?' resolve-target':''}${isOpp?' opp':''} no-hover">
+        <div class="ccost">${costDisp}</div>
+        <div class="cname">${s.card.name}</div>
+        <div class="ctype">${typeLbl}</div>
+        <div class="ceff">${s.card.eff||''}</div>
+        <div style="font-size:.55em;color:#999;position:absolute;bottom:2px;right:2px">${s.owner==='host'?'H':'G'}</div>
+      </div>`;
+    } else {
+      cardHtml=`<div class="card fd no-hover" style="border-color:#ccc;background:#fafaf0;border-style:dashed;cursor:default">
+        <span style="text-align:center;padding:30px 16px;display:block;color:#bbb;font-size:1.4em">—</span>
+      </div>`;
+    }
+    const ordinal=slotNum===1?'st':slotNum===2?'nd':slotNum===3?'rd':'th';
+    slots.innerHTML+=`<div class="cslot">
+      <div class="cslot-lbl">${slotNum}${ordinal}</div>
+      ${markerLabel}
+      ${cardHtml}
+    </div>`;
+  }
+}
+
+function renderActions(){
+  const me=myRole;
+  const pnd=G.pending;
+  const cp=G.costPending;
+  const isMyTurn=G.phase==='chain'&&G.priority===me;
+  const isMyCost=pnd?.type==='COST'&&G.chainArea[pnd.chainIdx]?.owner===me;
+  const isBlockChoice=pnd?.type==='BLOCK_CHOICE'&&opp(pnd.actor)===me;
+  const cpPaid=cp?(cp.manaSpent.length+cp.voltSpent+(cp.priSpent?1:0)):0;
+
+  document.getElementById('btn-pass').disabled=!isMyTurn;
+  const nextFreeIdx=G.chainArea.findIndex(s=>s.card===null);
+  document.getElementById('btn-exc').disabled=!(isMyTurn && nextFreeIdx>=0 && nextFreeIdx<2);
+  document.getElementById('btn-use-vol').disabled=!(isMyCost && cp && G.players[me].voltage.length>cp.voltSpent && cpPaid<cp.needed);
+  document.getElementById('btn-pri-pay').disabled=!(isMyCost && cp && G.priorityMarkerHolder===me && !G.players[me].priorityTapped && cpPaid<cp.needed);
+  document.getElementById('btn-discard').disabled=!isMyCost;
+  document.getElementById('btn-confirm').disabled=!isMyCost;
+  document.getElementById('btn-no-block').disabled=!isBlockChoice;
+
+  let msg='';
+  if(G.winner) msg=G.winner===me?'🎉 勝利！':'😢 敗北…';
+  else if(isMyTurn) msg='手札のカードをクリックしてチェーン、またはパス';
+  else if(G.phase==='chain') msg='相手のターン（待機中）';
+  else if(isMyCost){
+    const card=G.chainArea[pnd.chainIdx].card;
+    msg=`【解決】${card.name} コスト${cp.needed} (支払い済み:${cpPaid}) — マナをクリックして支払い → 確定 or 廃棄`;
+  }
+  else if(isBlockChoice){
+    const myUnits=G.players[me].battle.filter(c=>!c.tapped);
+    msg=myUnits.length
+      ? `相手が攻撃（攻撃力${pnd.attackPower}）！ 自分のユニットをクリックでブロック or「ブロックしない」`
+      : `相手が攻撃（攻撃力${pnd.attackPower}）！ ブロック可能なユニットなし`;
+  }
+  else if(pnd?.type==='CHOOSE_ATK_SRC'&&pnd.actor===me) msg='攻撃するユニットを選んでください';
+  else if(pnd?.type==='CHOOSE_ATK_MODE'&&pnd.actor===me) msg='攻撃方法を選んでください';
+  else if(pnd?.type==='HANKI'&&pnd.owner===me) msg=`⚑反旗(はんき): ${pnd.card.name} を使用するか手札に加えるか`;
+  else if(pnd?.type==='SCRY'&&pnd.actor===me) msg=`デッキ上: ${pnd.card.name} — 手札 or マナゾーン？`;
+  else if(pnd?.type==='AE_TAP_UNTAP'&&pnd.actor===me&&!pnd.targetUid) msg='【AE:タップ操作】バトルゾーンのカード1枚をクリックして対象を選んでください';
+  else if(pnd?.type==='AE_DISCARD_VOLT'&&pnd.actor===me&&pnd.confirmed) msg='【AE:ボルテージ廃棄】ボルテージゾーンから廃棄するカードをクリックしてください';
+  else if(G.phase==='resolution') msg='相手の解決を待機中…';
+
+  document.getElementById('amsg').textContent=msg;
+}
+
+function renderPending(){
+  const me=myRole, pnd=G.pending;
+  if(!pnd) return;
+
+  if(pnd.type==='BLOCK_CHOICE' && opp(pnd.actor)===me){
+    const myUnits=G.players[me].battle.filter(c=>!c.tapped);
+    if(!myUnits.length){
+      showModal(`相手が攻撃（攻撃力${pnd.attackPower}）`,
+        'ブロック可能なアンタップユニットがありません',
+        [{label:'ブロックしない（ダメージを受ける）', fn:()=>{ closeModal(); act('NO_BLOCK',{from:me}); }}]
+      );
+    } else {
+      closeModal();
+    }
+    return;
+  }
+
+  if(pnd.type==='CHOOSE_ATK_MODE' && pnd.actor===me){
+    showModal('攻撃方法を選択','',[
+      {label:'ユニットで攻撃', fn:()=>{ closeModal(); act('CHOOSE_ATK_MODE',{mode:'unit',from:me}); }},
+      {label:'プレイヤーとして攻撃', fn:()=>{ closeModal(); act('CHOOSE_ATK_MODE',{mode:'player',from:me}); }},
+    ]); return;
+  }
+
+  if(pnd.type==='SCRY' && pnd.actor===me){
+    const sc=pnd.card;
+    const typeLbl=sc.type==='unit'?'ユニット':sc.type==='attack'?'アタック':sc.type==='spell'?'スペル':'エクシード';
+    const body=`<strong style="font-size:1.05em">${sc.name}</strong><br>`
+      +`<span style="color:#666">コスト: ${sc.cost} ／ タイプ: ${typeLbl}</span><br>`
+      +(sc.eff?`<span style="font-size:.88em">${sc.eff}</span>`:'');
+    showModal('瞑想(研ぎ澄ませ) — デッキ上のカード', body,[
+      {label:'手札に加える', fn:()=>{ closeModal(); act('CHOOSE_SCRY',{choice:'hand',from:me}); }},
+      {label:'マナゾーンへ', fn:()=>{ closeModal(); act('CHOOSE_SCRY',{choice:'mana',from:me}); }},
+    ]); return;
+  }
+
+  if(pnd.type==='HANKI' && pnd.owner===me){
+    const hc=pnd.card;
+    const typeLbl=hc.type==='unit'?'ユニット':hc.type==='attack'?'アタック':hc.type==='spell'?'スペル':'エクシード';
+    const body=`<strong style="font-size:1.05em">${hc.name}</strong><br>`
+      +`<span style="color:#888">コスト: ${hc.cost} ／ タイプ: ${typeLbl}</span><br>`
+      +(hc.eff?`<span style="font-size:.88em">${hc.eff}</span>`:'');
+    showModal('⚑反旗が発動！', body,[
+      {label:'使用する（無料）', fn:()=>{ closeModal(); act('HANKI_CHOICE',{choice:'use',from:me}); }},
+      {label:'手札に加える', fn:()=>{ closeModal(); act('HANKI_CHOICE',{choice:'hand',from:me}); }},
+    ]); return;
+  }
+
+  if(pnd.type==='AE_TRASH_HAND' && pnd.actor===me){
+    const myTrash=G.players[me].trash;
+    if(!myTrash.length){
+      if(isHost){ G.pending=null; broadcast(); setTimeout(advanceResolution,50); }
+      return;
+    }
+    const tbtns=myTrash.map(c=>({
+      label:c.fd?'（不明）':c.name,
+      fn:()=>{ closeModal(); act('AE_CHOICE',{uid:c.uid,from:me}); }
+    }));
+    showModal('AE:回収', 'トラッシュから1枚を手札に加える', tbtns); return;
+  }
+
+  if(pnd.type==='AE_TAP_UNTAP' && pnd.actor===me){
+    if(pnd.targetUid){
+      // 対象選択済み：タップ/アンタップの2択モーダル
+      let targetName='ユニット';
+      for(const role of ['host','guest']){
+        const c=G.players[role].battle.find(b=>b.uid===pnd.targetUid);
+        if(c){ targetName=c.name; break; }
+      }
+      showModal('AE:タップ操作', `【${targetName}】をどうしますか？`,[
+        {label:'タップする',    fn:()=>{ closeModal(); act('AE_TAP_ACTION',{uid:pnd.targetUid,action:'tap',from:me}); }},
+        {label:'アンタップする', fn:()=>{ closeModal(); act('AE_TAP_ACTION',{uid:pnd.targetUid,action:'untap',from:me}); }},
+      ]); return;
+    }
+    // 対象未選択：モーダルなし、バトルゾーンのカードをクリックして選択
+    closeModal(); return;
+  }
+
+  if(pnd.type==='AE_DISCARD_VOLT' && pnd.actor===me){
+    if(!pnd.confirmed){
+      showModal('AE:ボルテージ廃棄', 'ボルテージゾーンから1枚を廃棄できます。使用しますか？',[
+        {label:'使用する', fn:()=>{ closeModal(); act('AE_CONFIRM',{from:me}); }},
+        {label:'スキップ',  fn:()=>{ closeModal(); act('AE_SKIP',{from:me}); }},
+      ]); return;
+    }
+    // confirmed: モーダルは閉じてボルテージカードをクリック可能にする
+    closeModal(); return;
+  }
+
+  closeModal();
+}
+
+// ===== MODAL =====
+let _modalOpen=false;
+function showModal(title, body, btns){
+  if(_modalOpen && btns.length===0) return;
+  _modalOpen=true;
+  document.getElementById('mtitle').textContent=title;
+  document.getElementById('mcont').innerHTML=body;
+  const ma=document.getElementById('macts');
+  ma.innerHTML='';
+  for(const b of btns){
+    const btn=document.createElement('button');
+    btn.className='btn'; btn.textContent=b.label; btn.onclick=b.fn;
+    ma.appendChild(btn);
+  }
+  document.getElementById('modal').classList.add('on');
+}
+function closeModal(){
+  _modalOpen=false;
+  document.getElementById('modal').classList.remove('on');
+}
+</script>
+</body>
+</html>
