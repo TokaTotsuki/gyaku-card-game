@@ -259,14 +259,38 @@ let myPeer, myConn, isHost=false, myRole=null, G=null, gameStarted=false;
 
 document.addEventListener('DOMContentLoaded', ()=>{
   const roomId = String(Math.floor(100000 + Math.random() * 900000));
-  myPeer = new Peer(roomId, {debug:0});
+  myPeer = new Peer(roomId, {
+    debug: 0,
+    config: {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun3.l.google.com:19302' },
+      ]
+    }
+  });
   myPeer.on('open', id=>{
     document.getElementById('lstatus').textContent='接続完了';
     document.getElementById('lmain').style.display='flex';
     document.getElementById('peer-id-box').textContent=id;
   });
-  myPeer.on('connection', conn=>{ myConn=conn; setupConn(); });
-  myPeer.on('error', e=>document.getElementById('lstatus').textContent='エラー: '+e.type);
+  myPeer.on('connection', conn=>{
+    myConn=conn;
+    setupConn();
+    // レースコンディション対策: 接続がすでに開いている場合
+    if(conn.open && isHost && !G) startGame();
+  });
+  myPeer.on('error', e=>{
+    const st=document.getElementById('lstatus');
+    if(e.type==='peer-unavailable') st.textContent='⚠ IDが見つかりません。ホストのIDを確認してください';
+    else if(e.type==='network'||e.type==='server-error') st.textContent='⚠ サーバー接続エラー。ページを再読み込みしてください';
+    else st.textContent='エラー: '+e.type;
+    if(!gameStarted){
+      document.getElementById('lmain').style.display='flex';
+      document.getElementById('lwait').style.display='none';
+    }
+  });
 });
 
 function createGame(){
@@ -278,16 +302,30 @@ function joinGame(){
   const id=document.getElementById('join-input').value.trim();
   if(!id) return;
   isHost=false; myRole='guest';
-  myConn=myPeer.connect(id, {reliable:true});
+  document.getElementById('lstatus').textContent='接続中…';
+  document.getElementById('lmain').style.display='none';
+  document.getElementById('lwait').style.display='flex';
+  document.getElementById('peer-id-box').textContent='接続中…';
+  myConn=myPeer.connect(id, {reliable:true, serialization:'json'});
   setupConn();
 }
 function setupConn(){
+  let connTimeout=setTimeout(()=>{
+    if(!gameStarted){
+      document.getElementById('lstatus').textContent='⚠ 接続タイムアウト。IDを確認し再試行してください';
+      document.getElementById('lmain').style.display='flex';
+      document.getElementById('lwait').style.display='none';
+    }
+  }, 20000);
   myConn.on('open', ()=>{
+    clearTimeout(connTimeout);
+    document.getElementById('lstatus').textContent='接続確立！';
     log('接続確立');
     if(!isHost) myConn.send({t:'READY'});
   });
   myConn.on('data', onMsg);
-  myConn.on('close', ()=>log('接続が切れました'));
+  myConn.on('close', ()=>{ log('接続が切れました'); if(!gameStarted) document.getElementById('lstatus').textContent='切断されました。再試行してください'; });
+  myConn.on('error', e=>log('接続エラー: '+e));
 }
 function onMsg(msg){
   if(msg.t==='READY' && isHost && !G){ startGame(); }
