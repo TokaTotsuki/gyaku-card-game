@@ -65,7 +65,7 @@ input{padding:9px;border:2px solid #bbb;background:#fff;color:#111;border-radius
 /* ZONES */
 .zone{min-width:80px;min-height:116px;border:1px dashed #bbb;border-radius:5px;padding:3px;display:flex;flex-wrap:wrap;align-content:flex-start;gap:2px;position:relative}
 .zone.bz{flex:1;min-width:100px}
-.zone.hand{flex:2;min-width:180px;flex-wrap:nowrap;overflow-x:auto}
+.zone.hand{flex:1;min-width:0;flex-wrap:nowrap;overflow-x:auto}
 .zone.mz{min-width:70px;max-width:194px}
 .zone.vz{min-width:70px}
 .zlbl{font-size:.58em;color:#555;white-space:nowrap;margin-bottom:1px;display:block}
@@ -151,7 +151,7 @@ input{padding:9px;border:2px solid #bbb;background:#fff;color:#111;border-radius
   <div id="abar">
     <span id="amsg">接続してください</span>
     <button class="ab" id="btn-pass" onclick="act('PASS')" disabled>パス</button>
-    <button class="ab" id="btn-exc" onclick="act('CHAIN_EXCEED')" disabled>エクシードをチェーン</button>
+    <button class="ab" id="btn-exc" onclick="act('CHAIN_EXCEED')" disabled style="display:none">エクシードをチェーン</button>
     <button class="ab" id="btn-pri-pay" onclick="act('PAY_PRIORITY')" disabled style="background:#f8f5e0;border-color:#aa8">優先権マーカー使用</button>
     <button class="ab red" id="btn-use-vol" onclick="act('PAY_VOLTAGE')" disabled>ボルテージでコスト払う</button>
     <button class="ab red" id="btn-discard" onclick="act('DISCARD_CHAIN')" disabled style="background:#3a1515;border-color:#744;color:#fff">廃棄</button>
@@ -169,7 +169,10 @@ input{padding:9px;border:2px solid #bbb;background:#fff;color:#111;border-radius
     <div class="zone vz" id="my-vz"><span class="zlbl">ボルテージ <span class="cnt" id="my-vc">0</span>/7</span></div>
     <div class="zone mz" id="my-mz"><span class="zlbl">マナゾーン</span></div>
     <div class="zone bz" id="my-bz"><span class="zlbl">バトルゾーン</span></div>
-    <div class="zone hand" id="my-hand"><span class="zlbl">手札</span></div>
+    <div style="display:flex;flex-direction:column;gap:4px;flex:2;min-width:180px">
+      <div class="zone hand" id="my-hand" style="flex:1"><span class="zlbl">手札</span></div>
+      <div id="my-exceed-area" style="display:flex;align-items:center;gap:5px;padding:2px 3px;min-height:0"></div>
+    </div>
     <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
       <span class="zlbl">デッキ <span class="cnt" id="my-dc">0</span></span>
       <div class="card fd no-hover" style="cursor:default"><span style="text-align:center;padding:30px 20px;font-size:1.3em;display:block">▣</span></div>
@@ -846,7 +849,9 @@ function doPayVoltage(actor){
   const cp=G.costPending;
   const alreadyPaid=cp.manaSpent.length+cp.voltSpent+(cp.priSpent?1:0);
   if(alreadyPaid>=cp.needed) return;
-  if(G.players[actor].voltage.length<=cp.voltSpent) return;
+  // 表向きのボルテージが残っている分だけ支払い可能
+  const faceUpCount=G.players[actor].voltage.filter(c=>c.voltFaceUp).length;
+  if(faceUpCount<=cp.voltSpent) return;
   cp.voltSpent++;
   broadcast();
 }
@@ -1157,6 +1162,7 @@ function renderAll(){
   renderZoneVoltage('my-vz', mp.voltage, 'my-vc', me, true);
   renderZoneBattle('my-bz', mp.battle, me, true);
   renderHand('my-hand', mp.hand, me);
+  renderExceedArea();
   document.getElementById('my-dc').textContent=mp.deck.length;
   document.getElementById('my-tc').textContent=mp.trash.length;
   document.getElementById('my-ae').textContent=mp.aeTrash.length;
@@ -1258,6 +1264,7 @@ function renderZoneBattle(id, battle, role, isMe){
       onclick="${onclick}" data-uid="${c.uid}">
       <div class="cname">${c.name}</div>
       <div class="ctype">ユニット</div>
+      <div class="ceff">${c.eff||''}</div>
       <span class="cstats">⚔${c.atk} 🛡${c.def}</span>
     </div>`;
   }
@@ -1284,22 +1291,40 @@ function renderHand(id, hand, role){
       <div class="ctype">${c.hanko?'<span class="hankof">⚑</span>':''}${typeLbl}</div>
       <div class="ceff">${c.eff||''}</div>
       ${c.type==='unit'?`<span class="cstats">⚔${c.atk} 🛡${c.def}</span>`:
-        c.type==='attack'?`<span class="cstats">⌂+${c.power}</span>`:''}
+        c.type==='attack'?`<span class="cstats">⚔${c.power}</span>`:''}
     </div>`;
   }
+}
+
+function renderExceedArea(){
+  const el=document.getElementById('my-exceed-area');
+  if(!el) return;
+  const me=myRole;
+  const isMyTurn=G.phase==='chain'&&G.priority===me;
+  const nextFreeIdx=G.chainArea.findIndex(s=>s.card===null);
+  const canExceed=isMyTurn && nextFreeIdx>=0 && nextFreeIdx<2;
+  const exc=EXCEED_DEF;
+  const extraClass=canExceed?' can-target':'';
+  const onclick=canExceed?`act('CHAIN_EXCEED')`:'';
+  el.innerHTML=`<span style="font-size:.58em;color:#7a3a9a;white-space:nowrap;writing-mode:vertical-lr;padding:0 2px;align-self:center">エクシード</span>
+    <div class="card exc${extraClass}" onclick="${onclick}" style="${canExceed?'':'opacity:.55;cursor:default'}">
+      <div class="ccost">${exc.baseCost}</div>
+      <div class="cname">${exc.name}</div>
+      <div class="ctype">エクシード</div>
+      <div class="ceff">${exc.eff||''}</div>
+      <span class="cstats">⚔${exc.power}</span>
+    </div>`;
 }
 
 function renderChainArea(){
   const slots=document.getElementById('chain-slots');
   const empty=document.getElementById('chain-empty');
-  const hasAnything=G.chainArea.some((s,i)=>s.card||(i>=2&&s.aeType));
-  if(!hasAnything){ slots.innerHTML=''; empty.style.display='block'; return; }
-  empty.style.display='none';
+  empty.style.display='none'; // 1st/2ndを常に表示するため非表示
   slots.innerHTML='';
   for(let i=0;i<G.chainArea.length;i++){
     const s=G.chainArea[i];
     const slotNum=i+1;
-    if(i<2 && !s.card) continue;
+    // 1st/2ndは常に表示、3rd以降は占有時のみ
     if(i>=2 && !s.aeType && !s.card) continue;
     const markerLabel=slotNum<=2
       ? `<span class="cslot-marker cb">CB${slotNum}</span>`
@@ -1343,7 +1368,8 @@ function renderActions(){
   document.getElementById('btn-pass').disabled=!isMyTurn;
   const nextFreeIdx=G.chainArea.findIndex(s=>s.card===null);
   document.getElementById('btn-exc').disabled=!(isMyTurn && nextFreeIdx>=0 && nextFreeIdx<2);
-  document.getElementById('btn-use-vol').disabled=!(isMyCost && cp && G.players[me].voltage.length>cp.voltSpent && cpPaid<cp.needed);
+  const faceUpVoltCount=G.players[me].voltage.filter(c=>c.voltFaceUp).length;
+  document.getElementById('btn-use-vol').disabled=!(isMyCost && cp && faceUpVoltCount>cp.voltSpent && cpPaid<cp.needed);
   document.getElementById('btn-pri-pay').disabled=!(isMyCost && cp && G.priorityMarkerHolder===me && !G.players[me].priorityTapped && cpPaid<cp.needed);
   document.getElementById('btn-discard').disabled=!isMyCost;
   document.getElementById('btn-confirm').disabled=!isMyCost;
@@ -1400,11 +1426,7 @@ function renderPending(){
 
   if(pnd.type==='SCRY' && pnd.actor===me){
     const sc=pnd.card;
-    const typeLbl=sc.type==='unit'?'ユニット':sc.type==='attack'?'アタック':sc.type==='spell'?'スペル':'エクシード';
-    const body=`<strong style="font-size:1.05em">${sc.name}</strong><br>`
-      +`<span style="color:#666">コスト: ${sc.cost} ／ タイプ: ${typeLbl}</span><br>`
-      +(sc.eff?`<span style="font-size:.88em">${sc.eff}</span>`:'');
-    showModal('瞑想(研ぎ澄ませ) — デッキ上のカード', body,[
+    showModal('瞑想(研ぎ澄ませ) — デッキ上のカード', makeCardPreview(sc),[
       {label:'手札に加える', fn:()=>{ closeModal(); act('CHOOSE_SCRY',{choice:'hand',from:me}); }},
       {label:'マナゾーンへ', fn:()=>{ closeModal(); act('CHOOSE_SCRY',{choice:'mana',from:me}); }},
     ]); return;
@@ -1412,11 +1434,7 @@ function renderPending(){
 
   if(pnd.type==='HANKI' && pnd.owner===me){
     const hc=pnd.card;
-    const typeLbl=hc.type==='unit'?'ユニット':hc.type==='attack'?'アタック':hc.type==='spell'?'スペル':'エクシード';
-    const body=`<strong style="font-size:1.05em">${hc.name}</strong><br>`
-      +`<span style="color:#888">コスト: ${hc.cost} ／ タイプ: ${typeLbl}</span><br>`
-      +(hc.eff?`<span style="font-size:.88em">${hc.eff}</span>`:'');
-    showModal('⚑反旗が発動！', body,[
+    showModal('⚑反旗が発動！', makeCardPreview(hc),[
       {label:'使用する（無料）', fn:()=>{ closeModal(); act('HANKI_CHOICE',{choice:'use',from:me}); }},
       {label:'手札に加える', fn:()=>{ closeModal(); act('HANKI_CHOICE',{choice:'hand',from:me}); }},
     ]); return;
@@ -1429,7 +1447,8 @@ function renderPending(){
       return;
     }
     const tbtns=myTrash.map(c=>({
-      label:c.fd?'（不明）':c.name,
+      label: c.fd?'（不明）':c.name,
+      html: c.fd ? '（不明）' : makeCardPreview(c),
       fn:()=>{ closeModal(); act('AE_CHOICE',{uid:c.uid,from:me}); }
     }));
     showModal('AE:回収', 'トラッシュから1枚を手札に加える', tbtns); return;
@@ -1468,6 +1487,20 @@ function renderPending(){
 
 // ===== MODAL =====
 let _modalOpen=false;
+function makeCardPreview(c){
+  const cls=cardClass(c);
+  const typeLbl=c.type==='unit'?'ユニット':c.type==='attack'?'アタック':c.type==='spell'?'スペル':'エクシード';
+  const statsHtml=c.type==='unit'
+    ?`<span class="cstats">⚔${c.atk} 🛡${c.def}</span>`
+    :c.type==='attack'?`<span class="cstats">⚔${c.power}</span>`:'';
+  return `<div class="${cls} no-hover" style="margin:0 auto 8px auto;cursor:default;width:90px;min-width:90px;height:124px">
+    <div class="ccost">${c.cost}</div>
+    <div class="cname">${c.name}</div>
+    <div class="ctype">${c.hanko?'<span class="hankof">⚑</span>':''}${typeLbl}</div>
+    <div class="ceff">${c.eff||''}</div>
+    ${statsHtml}
+  </div>`;
+}
 function showModal(title, body, btns){
   if(_modalOpen && btns.length===0) return;
   _modalOpen=true;
@@ -1477,7 +1510,9 @@ function showModal(title, body, btns){
   ma.innerHTML='';
   for(const b of btns){
     const btn=document.createElement('button');
-    btn.className='btn'; btn.textContent=b.label; btn.onclick=b.fn;
+    btn.className='btn';
+    if(b.html) btn.innerHTML=b.html; else btn.textContent=b.label;
+    btn.onclick=b.fn;
     ma.appendChild(btn);
   }
   document.getElementById('modal').classList.add('on');
