@@ -81,10 +81,14 @@ input{padding:9px;border:2px solid #bbb;background:#fff;color:#111;border-radius
 .ab:disabled,.ab[disabled]{opacity:.35;cursor:default;pointer-events:none}
 #amsg{font-size:.8em;color:#1a7a1a;flex:1}
 /* MODAL */
-#modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;align-items:center;justify-content:center}
-#modal.on{display:flex}
-#mbox{background:#fff;border:2px solid #3a8a3a;border-radius:10px;padding:18px;max-width:520px;min-width:280px}
-#mtitle{color:#1a7a1a;font-weight:bold;margin-bottom:10px;font-size:1.05em}
+#modal{display:none;position:fixed;inset:0;background:transparent;z-index:200;pointer-events:none}
+#modal.on{display:block}
+#mbox{background:#fff;border:2px solid #3a8a3a;border-radius:10px;padding:18px;max-width:520px;min-width:280px;
+  position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+  box-shadow:0 4px 24px rgba(0,0,0,.45);pointer-events:all;user-select:none}
+#mbox.dragging{transition:none}
+#mtitle{color:#1a7a1a;font-weight:bold;margin-bottom:10px;font-size:1.05em;cursor:grab;padding-bottom:6px;border-bottom:1px solid #ddd}
+#mtitle:active{cursor:grabbing}
 #mcont{margin-bottom:14px;font-size:.88em;line-height:1.5;color:#222}
 #macts{display:flex;gap:8px;flex-wrap:wrap}
 /* LOG */
@@ -1342,7 +1346,8 @@ function renderChainArea(){
       const statsHtml=s.card.type==='unit'
         ?`<span class="cstats">⚔${s.card.atk} 🛡${s.card.def}</span>`
         :(s.card.type==='attack'||s.card.type==='exceed')?`<span class="cstats">⚔${s.card.power}</span>`:'';
-      cardHtml=`<div class="${cardClass(s.card)}${isResolving?' resolve-target':''} no-hover">
+      const isOpp=s.owner!==myRole;
+      cardHtml=`<div class="${cardClass(s.card)}${isResolving?' resolve-target':''}${isOpp?' opp':''} no-hover">
         <div class="ccost">${costDisp}</div>
         <div class="cname">${s.card.name}</div>
         <div class="ctype">${s.card.hanko?'<span class="hankof">⚑</span>':''}${typeLbl}</div>
@@ -1492,6 +1497,47 @@ function renderPending(){
   closeModal();
 }
 
+// ===== MODAL DRAG =====
+(function(){
+  let dragging=false, ox=0, oy=0, bx=0, by=0;
+  document.addEventListener('DOMContentLoaded',()=>{
+    const title=document.getElementById('mtitle');
+    const box=document.getElementById('mbox');
+    title.addEventListener('mousedown',e=>{
+      dragging=true;
+      const r=box.getBoundingClientRect();
+      ox=e.clientX-r.left; oy=e.clientY-r.top;
+      box.style.transform='none';
+      bx=r.left; by=r.top;
+      box.style.left=bx+'px'; box.style.top=by+'px';
+      box.classList.add('dragging');
+      e.preventDefault();
+    });
+    document.addEventListener('mousemove',e=>{
+      if(!dragging) return;
+      bx=e.clientX-ox; by=e.clientY-oy;
+      box.style.left=bx+'px'; box.style.top=by+'px';
+    });
+    document.addEventListener('mouseup',()=>{ dragging=false; box.classList.remove('dragging'); });
+    // タッチ対応
+    title.addEventListener('touchstart',e=>{
+      dragging=true;
+      const t=e.touches[0];
+      const r=box.getBoundingClientRect();
+      ox=t.clientX-r.left; oy=t.clientY-r.top;
+      box.style.transform='none';
+      box.style.left=r.left+'px'; box.style.top=r.top+'px';
+      e.preventDefault();
+    },{passive:false});
+    document.addEventListener('touchmove',e=>{
+      if(!dragging) return;
+      const t=e.touches[0];
+      box.style.left=(t.clientX-ox)+'px'; box.style.top=(t.clientY-oy)+'px';
+    },{passive:true});
+    document.addEventListener('touchend',()=>{ dragging=false; });
+  });
+})();
+
 // ===== MODAL =====
 let _modalOpen=false;
 function makeCardPreview(c){
@@ -1511,6 +1557,9 @@ function makeCardPreview(c){
 function showModal(title, body, btns){
   if(_modalOpen && btns.length===0) return;
   _modalOpen=true;
+  // 位置を中央にリセット
+  const box=document.getElementById('mbox');
+  box.style.left=''; box.style.top=''; box.style.transform='translate(-50%,-50%)';
   document.getElementById('mtitle').textContent=title;
   document.getElementById('mcont').innerHTML=body;
   const ma=document.getElementById('macts');
