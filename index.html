@@ -546,6 +546,11 @@ function aChooseScry(actor, chainIdx){
 }
 
 function aChooseTapUntap(actor){
+  const allUnits=[...G.players['host'].battle, ...G.players['guest'].battle];
+  if(!allUnits.length){
+    log('AE:タップ操作 — バトルゾーンにユニットなし、スキップ');
+    return; // G.pendingをセットしないので呼び出し元がadvanceResolutionを続行
+  }
   G.pending={type:'AE_TAP_UNTAP', actor, chainIdx:null};
 }
 
@@ -1332,15 +1337,17 @@ function renderChainArea(){
     const isResolving=G.phase==='resolution'&&G.resolvePtr===i&&G.pending?.type==='COST';
     let cardHtml;
     if(s.card){
-      const isOpp=s.owner!==myRole;
       const costDisp=s.card.type==='exceed'?s.card.effectiveCost:s.card.cost;
       const typeLbl=s.card.type==='unit'?'ユニット':s.card.type==='attack'?'アタック':s.card.type==='exceed'?'エクシード':'スペル';
-      cardHtml=`<div class="${cardClass(s.card)}${isResolving?' resolve-target':''}${isOpp?' opp':''} no-hover">
+      const statsHtml=s.card.type==='unit'
+        ?`<span class="cstats">⚔${s.card.atk} 🛡${s.card.def}</span>`
+        :(s.card.type==='attack'||s.card.type==='exceed')?`<span class="cstats">⚔${s.card.power}</span>`:'';
+      cardHtml=`<div class="${cardClass(s.card)}${isResolving?' resolve-target':''} no-hover">
         <div class="ccost">${costDisp}</div>
         <div class="cname">${s.card.name}</div>
-        <div class="ctype">${typeLbl}</div>
+        <div class="ctype">${s.card.hanko?'<span class="hankof">⚑</span>':''}${typeLbl}</div>
         <div class="ceff">${s.card.eff||''}</div>
-        <div style="font-size:.55em;color:#999;position:absolute;bottom:2px;right:2px">${s.owner==='host'?'H':'G'}</div>
+        ${statsHtml}
       </div>`;
     } else {
       cardHtml=`<div class="card fd no-hover" style="border-color:#ccc;background:#fafaf0;border-style:dashed;cursor:default">
